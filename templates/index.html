@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>麻雀待ち確率</title>
+  <style>
+    body { font-family: sans-serif; margin: 20px; }
+    .tile-group {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+    .tile {
+      margin: 5px 10px;
+      padding: 5px 10px;
+      cursor: pointer;
+      border: 1px solid #ccc;
+    }
+    #selection_display { margin-top: 15px; font-weight: bold; }
+    .pattern-box {
+      margin: 5px;
+      padding: 5px;
+      border: 1px solid #ccc;
+      text-align: center;
+    }
+    .pattern-container {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .pattern-box img {
+      display: block;
+      margin: 0 auto 5px;
+      width: 50px;
+      height: auto;
+    }
+  </style>
+</head>
+<body>
+  <h1>麻雀待ち確率予測アプリ</h1>
+  <form method="post">
+    <p>牌をクリックして選択してください（選択順が記録され、同じ牌は最大4回まで）：</p>
+    
+    <!-- 各種類の牌 -->
+    <div class="tile-group">
+      <strong>萬子:</strong>
+      <button type="button" class="tile" data-value="m1">1萬</button>
+      <button type="button" class="tile" data-value="m2">2萬</button>
+      <button type="button" class="tile" data-value="m3">3萬</button>
+      <button type="button" class="tile" data-value="m4">4萬</button>
+      <button type="button" class="tile" data-value="m5">5萬</button>
+      <button type="button" class="tile" data-value="m6">6萬</button>
+      <button type="button" class="tile" data-value="m7">7萬</button>
+      <button type="button" class="tile" data-value="m8">8萬</button>
+      <button type="button" class="tile" data-value="m9">9萬</button>
+    </div>
+    
+    <div class="tile-group">
+      <strong>索子:</strong>
+      <button type="button" class="tile" data-value="s1">1索</button>
+      <button type="button" class="tile" data-value="s2">2索</button>
+      <button type="button" class="tile" data-value="s3">3索</button>
+      <button type="button" class="tile" data-value="s4">4索</button>
+      <button type="button" class="tile" data-value="s5">5索</button>
+      <button type="button" class="tile" data-value="s6">6索</button>
+      <button type="button" class="tile" data-value="s7">7索</button>
+      <button type="button" class="tile" data-value="s8">8索</button>
+      <button type="button" class="tile" data-value="s9">9索</button>
+    </div>
+    
+    <div class="tile-group">
+      <strong>筒子:</strong>
+      <button type="button" class="tile" data-value="p1">1筒</button>
+      <button type="button" class="tile" data-value="p2">2筒</button>
+      <button type="button" class="tile" data-value="p3">3筒</button>
+      <button type="button" class="tile" data-value="p4">4筒</button>
+      <button type="button" class="tile" data-value="p5">5筒</button>
+      <button type="button" class="tile" data-value="p6">6筒</button>
+      <button type="button" class="tile" data-value="p7">7筒</button>
+      <button type="button" class="tile" data-value="p8">8筒</button>
+      <button type="button" class="tile" data-value="p9">9筒</button>
+    </div>
+    
+    <div class="tile-group">
+      <strong>字牌:</strong>
+      <button type="button" class="tile" data-value="z1">東</button>
+      <button type="button" class="tile" data-value="z2">南</button>
+      <button type="button" class="tile" data-value="z3">西</button>
+      <button type="button" class="tile" data-value="z4">北</button>
+      <button type="button" class="tile" data-value="z5">白</button>
+      <button type="button" class="tile" data-value="z6">發</button>
+      <button type="button" class="tile" data-value="z7">中</button>
+    </div>
+    
+    <!-- 隠しフィールド -->
+    <input type="hidden" name="selected_tiles" id="selected_tiles">
+    
+    <!-- 選択順の表示エリア -->
+    <div id="selection_display">選択順: (まだ何も選択していません)</div>
+    
+    <br>
+    <input type="submit" value="決定">
+  </form>
+  
+  {% if error %}
+    <div style="color: red; font-weight: bold;">
+      エラー: {{ error }}
+    </div>
+  {% endif %}
+  
+  {% if sorted_result %}
+    <!-- 全待ちパターンを画像付きで横並びで表示 -->
+    <div>
+      <h2>全待ちパターンの確率 (高い順):</h2>
+      <div class="pattern-container">
+        {% for tile, probability in sorted_result %}
+          <div class="pattern-box">
+            <img src="{{ url_for('static', filename='tiles/' ~ tile ~ '.gif') }}" alt="{{ tile }}">
+            <div>{{ "%.1f"|format(probability*100) }}%</div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+  
+  <script>
+    // 選択された牌の順番を保持する配列
+    let selectedTiles = [];
+    
+    // 選択順表示と隠しフィールド更新用の関数
+    function updateSelectionDisplay() {
+      let display = selectedTiles.length ? selectedTiles.join(', ') : "(まだ何も選択していません)";
+      document.getElementById('selection_display').textContent = "選択順: " + display;
+      document.getElementById('selected_tiles').value = selectedTiles.join(',');
+    }
+    
+    // 各牌ボタンにクリックイベントを追加
+    document.querySelectorAll('.tile').forEach(button => {
+      button.addEventListener('click', function() {
+        let tile = this.getAttribute('data-value');
+        let count = selectedTiles.filter(x => x === tile).length;
+        if (count < 4) {
+          selectedTiles.push(tile);
+          updateSelectionDisplay();
+        } else {
+          alert("この牌はすでに4回選択されています。");
+        }
+      });
+    });
+  </script>
+</body>
+</html>
