@@ -1,0 +1,8 @@
+# node_modules
+node_modules
+
+# データファイル
+tenhou_db
+tenhou_db_test
+tenhou_logs
+tenhou_logs_test
