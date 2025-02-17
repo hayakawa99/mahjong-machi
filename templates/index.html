@@ -4,30 +4,91 @@
   <meta charset="UTF-8">
   <title>麻雀待ち確率</title>
   <style>
-    body { font-family: sans-serif; margin: 20px; }
+    body {
+      font-family: sans-serif;
+      margin: 20px;
+      background: #f5f7fa;
+      color: #333;
+    }
+    h1 {
+      text-align: center;
+      margin-bottom: 30px;
+      font-weight: 500;
+      color: #444;
+    }
+    form {
+      max-width: 800px;
+      margin: 0 auto;
+      background: #fff;
+      padding: 20px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+    }
+    p {
+      text-align: center;
+      font-size: 1.1rem;
+      margin-bottom: 20px;
+    }
     .tile-group {
       display: flex;
       flex-wrap: wrap;
       align-items: center;
-      margin-bottom: 15px;
+      margin-bottom: 5px; /* グループ間の余白を狭く */
     }
     .tile {
-      margin: 5px 10px;
-      padding: 5px 10px;
+      margin: 3px; /* 牌同士の隙間を狭く */
+      padding: 3px; /* パディングも若干縮小 */
       cursor: pointer;
       border: 1px solid #ccc;
+      border-radius: 4px;
+      background-color: #fff;
+      transition: background-color 0.2s ease, box-shadow 0.2s ease;
     }
-    #selection_display { margin-top: 15px; font-weight: bold; }
-    .pattern-box {
-      margin: 5px;
-      padding: 5px;
-      border: 1px solid #ccc;
+    .tile:hover {
+      background-color: #e9f0f7;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+    }
+    .tile img {
+      display: block;
+      width: 50px;
+      height: auto;
+    }
+    #selection_display {
+      margin-top: 15px;
+      font-weight: bold;
       text-align: center;
+      font-size: 1.1rem;
+    }
+    input[type="submit"] {
+      display: block;
+      margin: 20px auto 0 auto;
+      padding: 8px 16px;
+      background-color: #4285f4;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 1rem;
+      transition: background-color 0.2s ease;
+    }
+    input[type="submit"]:hover {
+      background-color: #357ae8;
     }
     .pattern-container {
       display: flex;
       flex-wrap: wrap;
       align-items: center;
+      justify-content: center;
+    }
+    .pattern-box {
+      background: #fff;
+      margin: 5px;
+      padding: 5px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+      text-align: center;
+      width: 60px;
     }
     .pattern-box img {
       display: block;
@@ -35,62 +96,132 @@
       width: 50px;
       height: auto;
     }
+    .error {
+      text-align: center;
+      color: #d93025;
+      font-weight: bold;
+      margin-top: 20px;
+    }
   </style>
 </head>
 <body>
-  <h1>麻雀待ち確率予測アプリ</h1>
+  <h1>簡易待ち確率予測</h1>
   <form method="post">
     <p>牌をクリックして選択してください（選択順が記録され、同じ牌は最大4回まで）：</p>
     
-    <!-- 各種類の牌 -->
+    <!-- 各種類の牌（グループ名は削除しています） -->
     <div class="tile-group">
-      <strong>萬子:</strong>
-      <button type="button" class="tile" data-value="m1">1萬</button>
-      <button type="button" class="tile" data-value="m2">2萬</button>
-      <button type="button" class="tile" data-value="m3">3萬</button>
-      <button type="button" class="tile" data-value="m4">4萬</button>
-      <button type="button" class="tile" data-value="m5">5萬</button>
-      <button type="button" class="tile" data-value="m6">6萬</button>
-      <button type="button" class="tile" data-value="m7">7萬</button>
-      <button type="button" class="tile" data-value="m8">8萬</button>
-      <button type="button" class="tile" data-value="m9">9萬</button>
+      <button type="button" class="tile" data-value="m1">
+        <img src="{{ url_for('static', filename='tiles/m1.gif') }}" alt="1萬">
+      </button>
+      <button type="button" class="tile" data-value="m2">
+        <img src="{{ url_for('static', filename='tiles/m2.gif') }}" alt="2萬">
+      </button>
+      <button type="button" class="tile" data-value="m3">
+        <img src="{{ url_for('static', filename='tiles/m3.gif') }}" alt="3萬">
+      </button>
+      <button type="button" class="tile" data-value="m4">
+        <img src="{{ url_for('static', filename='tiles/m4.gif') }}" alt="4萬">
+      </button>
+      <button type="button" class="tile" data-value="m5">
+        <img src="{{ url_for('static', filename='tiles/m5.gif') }}" alt="5萬">
+      </button>
+      <button type="button" class="tile" data-value="m6">
+        <img src="{{ url_for('static', filename='tiles/m6.gif') }}" alt="6萬">
+      </button>
+      <button type="button" class="tile" data-value="m7">
+        <img src="{{ url_for('static', filename='tiles/m7.gif') }}" alt="7萬">
+      </button>
+      <button type="button" class="tile" data-value="m8">
+        <img src="{{ url_for('static', filename='tiles/m8.gif') }}" alt="8萬">
+      </button>
+      <button type="button" class="tile" data-value="m9">
+        <img src="{{ url_for('static', filename='tiles/m9.gif') }}" alt="9萬">
+      </button>
     </div>
     
     <div class="tile-group">
-      <strong>索子:</strong>
-      <button type="button" class="tile" data-value="s1">1索</button>
-      <button type="button" class="tile" data-value="s2">2索</button>
-      <button type="button" class="tile" data-value="s3">3索</button>
-      <button type="button" class="tile" data-value="s4">4索</button>
-      <button type="button" class="tile" data-value="s5">5索</button>
-      <button type="button" class="tile" data-value="s6">6索</button>
-      <button type="button" class="tile" data-value="s7">7索</button>
-      <button type="button" class="tile" data-value="s8">8索</button>
-      <button type="button" class="tile" data-value="s9">9索</button>
+      <button type="button" class="tile" data-value="s1">
+        <img src="{{ url_for('static', filename='tiles/s1.gif') }}" alt="1索">
+      </button>
+      <button type="button" class="tile" data-value="s2">
+        <img src="{{ url_for('static', filename='tiles/s2.gif') }}" alt="2索">
+      </button>
+      <button type="button" class="tile" data-value="s3">
+        <img src="{{ url_for('static', filename='tiles/s3.gif') }}" alt="3索">
+      </button>
+      <button type="button" class="tile" data-value="s4">
+        <img src="{{ url_for('static', filename='tiles/s4.gif') }}" alt="4索">
+      </button>
+      <button type="button" class="tile" data-value="s5">
+        <img src="{{ url_for('static', filename='tiles/s5.gif') }}" alt="5索">
+      </button>
+      <button type="button" class="tile" data-value="s6">
+        <img src="{{ url_for('static', filename='tiles/s6.gif') }}" alt="6索">
+      </button>
+      <button type="button" class="tile" data-value="s7">
+        <img src="{{ url_for('static', filename='tiles/s7.gif') }}" alt="7索">
+      </button>
+      <button type="button" class="tile" data-value="s8">
+        <img src="{{ url_for('static', filename='tiles/s8.gif') }}" alt="8索">
+      </button>
+      <button type="button" class="tile" data-value="s9">
+        <img src="{{ url_for('static', filename='tiles/s9.gif') }}" alt="9索">
+      </button>
     </div>
     
     <div class="tile-group">
-      <strong>筒子:</strong>
-      <button type="button" class="tile" data-value="p1">1筒</button>
-      <button type="button" class="tile" data-value="p2">2筒</button>
-      <button type="button" class="tile" data-value="p3">3筒</button>
-      <button type="button" class="tile" data-value="p4">4筒</button>
-      <button type="button" class="tile" data-value="p5">5筒</button>
-      <button type="button" class="tile" data-value="p6">6筒</button>
-      <button type="button" class="tile" data-value="p7">7筒</button>
-      <button type="button" class="tile" data-value="p8">8筒</button>
-      <button type="button" class="tile" data-value="p9">9筒</button>
+      <button type="button" class="tile" data-value="p1">
+        <img src="{{ url_for('static', filename='tiles/p1.gif') }}" alt="1筒">
+      </button>
+      <button type="button" class="tile" data-value="p2">
+        <img src="{{ url_for('static', filename='tiles/p2.gif') }}" alt="2筒">
+      </button>
+      <button type="button" class="tile" data-value="p3">
+        <img src="{{ url_for('static', filename='tiles/p3.gif') }}" alt="3筒">
+      </button>
+      <button type="button" class="tile" data-value="p4">
+        <img src="{{ url_for('static', filename='tiles/p4.gif') }}" alt="4筒">
+      </button>
+      <button type="button" class="tile" data-value="p5">
+        <img src="{{ url_for('static', filename='tiles/p5.gif') }}" alt="5筒">
+      </button>
+      <button type="button" class="tile" data-value="p6">
+        <img src="{{ url_for('static', filename='tiles/p6.gif') }}" alt="6筒">
+      </button>
+      <button type="button" class="tile" data-value="p7">
+        <img src="{{ url_for('static', filename='tiles/p7.gif') }}" alt="7筒">
+      </button>
+      <button type="button" class="tile" data-value="p8">
+        <img src="{{ url_for('static', filename='tiles/p8.gif') }}" alt="8筒">
+      </button>
+      <button type="button" class="tile" data-value="p9">
+        <img src="{{ url_for('static', filename='tiles/p9.gif') }}" alt="9筒">
+      </button>
     </div>
     
     <div class="tile-group">
-      <strong>字牌:</strong>
-      <button type="button" class="tile" data-value="z1">東</button>
-      <button type="button" class="tile" data-value="z2">南</button>
-      <button type="button" class="tile" data-value="z3">西</button>
-      <button type="button" class="tile" data-value="z4">北</button>
-      <button type="button" class="tile" data-value="z5">白</button>
-      <button type="button" class="tile" data-value="z6">發</button>
-      <button type="button" class="tile" data-value="z7">中</button>
+      <button type="button" class="tile" data-value="z1">
+        <img src="{{ url_for('static', filename='tiles/z1.gif') }}" alt="東">
+      </button>
+      <button type="button" class="tile" data-value="z2">
+        <img src="{{ url_for('static', filename='tiles/z2.gif') }}" alt="南">
+      </button>
+      <button type="button" class="tile" data-value="z3">
+        <img src="{{ url_for('static', filename='tiles/z3.gif') }}" alt="西">
+      </button>
+      <button type="button" class="tile" data-value="z4">
+        <img src="{{ url_for('static', filename='tiles/z4.gif') }}" alt="北">
+      </button>
+      <button type="button" class="tile" data-value="z5">
+        <img src="{{ url_for('static', filename='tiles/z5.gif') }}" alt="白">
+      </button>
+      <button type="button" class="tile" data-value="z6">
+        <img src="{{ url_for('static', filename='tiles/z6.gif') }}" alt="發">
+      </button>
+      <button type="button" class="tile" data-value="z7">
+        <img src="{{ url_for('static', filename='tiles/z7.gif') }}" alt="中">
+      </button>
     </div>
     
     <!-- 隠しフィールド -->
@@ -104,15 +235,15 @@
   </form>
   
   {% if error %}
-    <div style="color: red; font-weight: bold;">
+    <div class="error">
       エラー: {{ error }}
     </div>
   {% endif %}
   
   {% if sorted_result %}
-    <!-- 全待ちパターンを画像付きで横並びで表示 -->
+    <!-- 待ちパターンの結果を画像付きで横並びで表示 -->
     <div>
-      <h2>全待ちパターンの確率 (高い順):</h2>
+      <h2 style="text-align: center;">待ちになっている確率 (高い順):</h2>
       <div class="pattern-container">
         {% for tile, probability in sorted_result %}
           <div class="pattern-box">
