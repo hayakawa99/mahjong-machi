@@ -8,11 +8,35 @@ import codecs
 from glob import glob
 import mysql.connector
 
+PROGRESS_FILE = "progress.json"   # 進捗を記録するファイル
+INPUT_DIR = "/Users/hayakawa/Library/Mobile Documents/com~apple~CloudDocs/ma-jan/tenhou_logs"
+
+CHUNK_SIZE = 5000  # 5000ラウンドごとにDBへINSERT & progress保存
+
+GLOBAL_RIICHI_ID = 0
+
 ###############################################################################
-# 1) 赤5変換・和了判定などのロジック
+# 進捗ファイルの読み書き
+###############################################################################
+def load_progress():
+    """progress.json から進捗を読み込む。無い/空ファイルの場合は空dict"""
+    if not os.path.exists(PROGRESS_FILE):
+        return {}
+    with open(PROGRESS_FILE, "r", encoding="utf-8") as f:
+        content = f.read().strip()
+        if not content:
+            return {}
+        return json.loads(content)
+
+def save_progress(progress_dict):
+    """進捗dictを progress.json に保存"""
+    with open(PROGRESS_FILE, "w", encoding="utf-8") as f:
+        json.dump(progress_dict, f, ensure_ascii=False, indent=2)
+
+###############################################################################
+# 赤5変換・和了判定などの既存ロジック
 ###############################################################################
 def convert_red_five(tile: str) -> str:
-    """赤5(m0,p0,s0) を通常5(m5,p5,s5)に変換"""
     if len(tile) == 2:
         suit, num = tile[0], tile[1]
         if num == '0' and suit in ('m', 'p', 's'):
@@ -76,15 +100,12 @@ def find_combinations(hand, combinations, current=None):
     find_combinations(rest, combinations, current)
 
 def is_winning_hand(hand14):
-    """14枚が和了形(七対子 or 4面子1雀頭)かどうか"""
     if len(hand14) != 14:
         return False
-
     # 七対子
     unique_tiles = set(hand14)
     if len(unique_tiles) == 7 and all(hand14.count(x) == 2 for x in unique_tiles):
         return True
-
     # 4面子+雀頭
     sorted_hand = sorted(hand14)
     combos = []
@@ -94,18 +115,15 @@ def is_winning_hand(hand14):
         melds = [g for g in c if is_valid_triplet(g) or is_valid_sequence(g)]
         if len(pairs) == 1 and len(melds) == 4:
             return True
-
     return False
 
 def find_waiting_tiles(hand13):
-    """13枚+1で和了になる牌を全列挙"""
     all_tiles = []
     for suit in ('m', 'p', 's'):
         for num in range(1, 10):
             all_tiles.append(f"{suit}{num}")
     for num in range(1, 8):
         all_tiles.append(f"z{num}")
-
     waits = []
     for t in all_tiles:
         if is_winning_hand(hand13 + [t]):
@@ -113,45 +131,58 @@ def find_waiting_tiles(hand13):
     return sorted(set(waits))
 
 ###############################################################################
-# 2) MySQL格納用のメイン処理
+# ファイル1つ分を処理する関数
 ###############################################################################
-
-# 入出力パス（JSONファイルが格納されているディレクトリ）
-INPUT_DIR = "/Users/hayakawa/Library/Mobile Documents/com~apple~CloudDocs/ma-jan/tenhou_logs"
-
-# グローバル連番
-GLOBAL_LOG_ID = 0     # discards テーブル用の連番 (1からインクリメント)
-GLOBAL_RIICHI_ID = 0  # 立直宣言ごとに +1
-GLOBAL_WAIT_ID = 0    # wait_patterns テーブル用の連番
-
-def process_logfile(filepath):
+def process_logfile(fpath, start_index, total_rounds, progress_dict, cnx, cursor):
     """
-    ログファイル1個を処理し、discards と wait_patterns 用の行を生成
+    - fpath: JSONファイルパス
+    - start_index: 今回の処理開始ラウンド
+    - total_rounds: ファイル内ラウンド総数
+    - progress_dict: 進捗を更新するdict
+    - cnx, cursor: MySQL接続
     """
+    global GLOBAL_RIICHI_ID
+
+    # ファイルを開いて logs を読んで、start_index〜total_roundsのラウンドを処理
     try:
-        size = os.path.getsize(filepath)
+        size = os.path.getsize(fpath)
         if size == 0:
-            print(f"Skipping empty file (size 0): {filepath}")
-            return [], []
-        with codecs.open(filepath, "r", "utf-8-sig") as f:
+            print(f"Skipping empty file (size 0): {fpath}")
+            return
+        with codecs.open(fpath, "r", "utf-8-sig") as f:
             content = f.read()
             if not content.strip():
-                print(f"File content empty after stripping: {filepath}")
-                return [], []
-            # デバッグ用：読み込んだ内容の先頭100文字を表示
-            print(f"DEBUG: {filepath} (size: {size} bytes) first 100 chars: {repr(content[:100])}")
+                print(f"File content empty after stripping: {fpath}")
+                return
+            print(f"DEBUG: {fpath} (size: {size} bytes) first 100 chars: {repr(content[:100])}")
             data = json.loads(content)
     except Exception as e:
-        print(f"Error reading {filepath}: {e}")
-        return [], []
+        print(f"Error reading {fpath}: {e}")
+        return
 
     logs = data.get("log", [])
-    filename = os.path.basename(filepath)
+    if not logs:
+        return
+    # 念のため logs の長さをチェック
+    if len(logs) != total_rounds:
+        print(f"Warning: {fpath} logs count changed? expected {total_rounds}, got {len(logs)}")
 
-    discards_rows = []
-    waits_rows = []
+    discards_insert_query = """
+    INSERT INTO discards (
+      riichi_id, discard_order, tile, riichi_tile, created_at
+    ) VALUES (%s, %s, %s, %s, %s)
+    """
+    waits_insert_query = """
+    INSERT INTO wait_patterns (
+      riichi_id, waits, created_at
+    ) VALUES (%s, %s, %s)
+    """
 
-    for round_info in logs:
+    discards_buffer = []
+    waits_buffer = []
+
+    for i in range(start_index, total_rounds):
+        round_info = logs[i]
         if not round_info:
             continue
 
@@ -163,12 +194,12 @@ def process_logfile(filepath):
         if len(init_hands_strs) != 4:
             continue
 
-        # 各プレイヤーの手牌(13枚)を構築
+        # 手牌を構築
         player_hands = []
-        for i in range(4):
+        for j in range(4):
             tiles = []
             suit = ""
-            for ch in init_hands_strs[i]:
+            for ch in init_hands_strs[j]:
                 if ch in "mpsz":
                     suit = ch
                 else:
@@ -176,9 +207,7 @@ def process_logfile(filepath):
                     tiles.append(t)
             player_hands.append(tiles)
 
-        # 立直状態管理
-        already_riichi = [False] * 4
-        # 立直判定前の捨て牌をバッファ
+        already_riichi = [False]*4
         player_discard_buffer = [[] for _ in range(4)]
 
         for action in round_info[1:]:
@@ -207,7 +236,6 @@ def process_logfile(filepath):
                     player_discard_buffer[l].append(base_tile)
 
                 if star_tile_flag:
-                    global GLOBAL_LOG_ID, GLOBAL_RIICHI_ID, GLOBAL_WAIT_ID
                     GLOBAL_RIICHI_ID += 1
                     current_riichi_id = GLOBAL_RIICHI_ID
                     already_riichi[l] = True
@@ -217,94 +245,119 @@ def process_logfile(filepath):
 
                     discard_order = 0
                     for i_buf, discard_tile in enumerate(player_discard_buffer[l]):
-                        GLOBAL_LOG_ID += 1
-                        riichi_tile_flag = (i_buf == len(player_discard_buffer[l]) - 1)
-                        discards_rows.append({
-                            "log_id": GLOBAL_LOG_ID,
-                            "riichi_id": current_riichi_id,
-                            "discard_order": discard_order,
-                            "tile": discard_tile.rstrip("*"),
-                            "riichi_tile": "TRUE" if riichi_tile_flag else "FALSE",
-                            "created_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        })
+                        discards_buffer.append((
+                            current_riichi_id,
+                            discard_order,
+                            discard_tile.rstrip("*"),
+                            "TRUE" if (i_buf == len(player_discard_buffer[l]) - 1) else "FALSE",
+                            datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        ))
                         discard_order += 1
 
                     for w in waits:
-                        GLOBAL_WAIT_ID += 1
-                        waits_rows.append({
-                            "wait_id": GLOBAL_WAIT_ID,
-                            "riichi_id": current_riichi_id,
-                            "waits": w,
-                            "created_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        })
+                        waits_buffer.append((
+                            current_riichi_id,
+                            w,
+                            datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        ))
 
                     player_discard_buffer[l].clear()
 
-    return discards_rows, waits_rows
+        # チャンク単位でコミット
+        if (i+1) % CHUNK_SIZE == 0:
+            if discards_buffer:
+                cursor.executemany(discards_insert_query, discards_buffer)
+                discards_buffer.clear()
+            if waits_buffer:
+                cursor.executemany(waits_insert_query, waits_buffer)
+                waits_buffer.clear()
+            cnx.commit()
+
+            # progress更新
+            progress_dict[fpath]["round_index"] = i+1
+            progress_dict[fpath]["GLOBAL_RIICHI_ID"] = GLOBAL_RIICHI_ID
+            save_progress(progress_dict)
+            print(f"Saved progress at round {i+1} for {fpath}.")
+
+    # 残りをINSERT
+    if discards_buffer:
+        cursor.executemany(discards_insert_query, discards_buffer)
+    if waits_buffer:
+        cursor.executemany(waits_insert_query, waits_buffer)
+    cnx.commit()
+
+    # ファイル完了時に progress を更新
+    progress_dict[fpath]["round_index"] = total_rounds
+    progress_dict[fpath]["GLOBAL_RIICHI_ID"] = GLOBAL_RIICHI_ID
+    save_progress(progress_dict)
+    print(f"Completed {fpath} (total rounds={total_rounds}).")
 
 def main():
-    # グローバル変数初期化
-    global GLOBAL_LOG_ID, GLOBAL_RIICHI_ID, GLOBAL_WAIT_ID
-    GLOBAL_LOG_ID = 1
-    GLOBAL_RIICHI_ID = 0
-    GLOBAL_WAIT_ID = 1
+    global GLOBAL_RIICHI_ID
 
-    input_files = glob(os.path.join(INPUT_DIR, "*.json"))
-    all_discards = []
-    all_waits = []
+    progress_dict = load_progress()
 
-    for fpath in input_files:
-        if not os.path.isfile(fpath):
-            continue
-        discards_rows, waits_rows = process_logfile(fpath)
-        all_discards.extend(discards_rows)
-        all_waits.extend(waits_rows)
-
-    # MySQL 接続設定（環境に合わせて変更してください）
+    # DB接続
     db_config = {
-        'user': 'machi-database-2-public.ch0kwscomlmk.us-east-1.rds.amazonaws.com',
+        'user': 'admin',
         'password': 'Fight913',
-        'host': 'admin',
+        'host': 'machi-database-2-public.ch0kwscomlmk.us-east-1.rds.amazonaws.com',
         'database': 'mahjong'
     }
+    cnx = mysql.connector.connect(**db_config)
+    cursor = cnx.cursor()
 
-    try:
-        cnx = mysql.connector.connect(**db_config)
-        cursor = cnx.cursor()
+    # ファイル一覧
+    input_files = glob(os.path.join(INPUT_DIR, "*.json"))
+    for fpath in sorted(input_files):
+        info = progress_dict.get(fpath, {})
+        done_rounds = info.get("round_index", 0)
+        total_rounds = info.get("total_rounds", None)
+        GLOBAL_RIICHI_ID = info.get("GLOBAL_RIICHI_ID", GLOBAL_RIICHI_ID)
 
-        discards_insert_query = (
-            "INSERT INTO discards (log_id, riichi_id, discard_order, tile, riichi_tile, created_at) "
-            "VALUES (%s, %s, %s, %s, %s, %s)"
+        # total_rounds が既に分かっていて、かつ done_rounds >= total_rounds => 完了済み => スキップ
+        if total_rounds is not None and done_rounds >= total_rounds:
+            print(f"Skipping {fpath}, already processed {done_rounds}/{total_rounds} rounds.")
+            continue
+
+        # total_rounds がまだわからない場合、1度だけファイルを開いて取得
+        if total_rounds is None:
+            print(f"Calculating total_rounds for {fpath} ...")
+            try:
+                with codecs.open(fpath, "r", "utf-8-sig") as f:
+                    data = json.load(f)
+                logs = data.get("log", [])
+                total_rounds = len(logs)
+                # progress.json に保存
+                progress_dict[fpath] = {
+                    "round_index": done_rounds,
+                    "total_rounds": total_rounds,
+                    "GLOBAL_RIICHI_ID": GLOBAL_RIICHI_ID
+                }
+                save_progress(progress_dict)
+                print(f"{fpath}: total_rounds={total_rounds}")
+            except Exception as e:
+                print(f"Error reading {fpath} to get total_rounds: {e}")
+                continue
+
+            # もし done_rounds >= total_rounds ならスキップ
+            if done_rounds >= total_rounds:
+                print(f"Skipping {fpath}, progress says done={done_rounds}, total={total_rounds}.")
+                continue
+
+        # ここで round_index < total_rounds => 処理を実行
+        process_logfile(
+            fpath,
+            start_index=done_rounds,
+            total_rounds=total_rounds,
+            progress_dict=progress_dict,
+            cnx=cnx,
+            cursor=cursor
         )
-        wait_patterns_insert_query = (
-            "INSERT INTO wait_patterns (wait_id, riichi_id, waits, created_at) "
-            "VALUES (%s, %s, %s, %s)"
-        )
 
-        discards_data = [
-            (row["log_id"], row["riichi_id"], row["discard_order"],
-             row["tile"], row["riichi_tile"], row["created_at"])
-            for row in all_discards
-        ]
-        wait_patterns_data = [
-            (row["wait_id"], row["riichi_id"], row["waits"], row["created_at"])
-            for row in all_waits
-        ]
-
-        if discards_data:
-            cursor.executemany(discards_insert_query, discards_data)
-        if wait_patterns_data:
-            cursor.executemany(wait_patterns_insert_query, wait_patterns_data)
-
-        cnx.commit()
-        print("MySQL への格納が完了しました")
-    except mysql.connector.Error as err:
-        print("MySQL error:", err)
-    finally:
-        if cursor:
-            cursor.close()
-        if cnx:
-            cnx.close()
+    cursor.close()
+    cnx.close()
+    print("All files processed. Exiting.")
 
 if __name__ == "__main__":
     main()

@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>麻雀待ち確率</title>
+  <title>麻雀待ち予測ツール</title>
   <style>
     body {
       font-family: sans-serif;
@@ -33,11 +33,11 @@
       display: flex;
       flex-wrap: wrap;
       align-items: center;
-      margin-bottom: 5px; /* グループ間の余白を狭く */
+      margin-bottom: 5px;
     }
     .tile {
-      margin: 3px; /* 牌同士の隙間を狭く */
-      padding: 3px; /* パディングも若干縮小 */
+      margin: 3px;
+      padding: 3px;
       cursor: pointer;
       border: 1px solid #ccc;
       border-radius: 4px;
@@ -105,11 +105,13 @@
   </style>
 </head>
 <body>
-  <h1>簡易待ち確率予測</h1>
-  <form method="post">
-    <p>牌をクリックして選択してください（選択順が記録され、同じ牌は最大4回まで）：</p>
-    
-    <!-- 各種類の牌（グループ名は削除しています） -->
+  <h1>麻雀待ち予測ツール</h1>
+
+  <!-- フォーム: method="post" action="/" で Lambdaの "/" ハンドラに飛ばす想定 -->
+  <form method="post" action="/">
+    <p>待ちを推測したい立直者の捨て牌を選択してください（同じ牌は最大4回まで）</p>
+
+    <!-- 萬子 (m1 ～ m9) -->
     <div class="tile-group">
       <button type="button" class="tile" data-value="m1">
         <img src="{{ url_for('static', filename='tiles/m1.gif') }}" alt="1萬">
@@ -140,6 +142,7 @@
       </button>
     </div>
     
+    <!-- 索子 (s1 ～ s9) -->
     <div class="tile-group">
       <button type="button" class="tile" data-value="s1">
         <img src="{{ url_for('static', filename='tiles/s1.gif') }}" alt="1索">
@@ -169,7 +172,8 @@
         <img src="{{ url_for('static', filename='tiles/s9.gif') }}" alt="9索">
       </button>
     </div>
-    
+
+    <!-- 筒子 (p1 ～ p9) -->
     <div class="tile-group">
       <button type="button" class="tile" data-value="p1">
         <img src="{{ url_for('static', filename='tiles/p1.gif') }}" alt="1筒">
@@ -199,7 +203,8 @@
         <img src="{{ url_for('static', filename='tiles/p9.gif') }}" alt="9筒">
       </button>
     </div>
-    
+
+    <!-- 字牌 (z1 ～ z7) -->
     <div class="tile-group">
       <button type="button" class="tile" data-value="z1">
         <img src="{{ url_for('static', filename='tiles/z1.gif') }}" alt="東">
@@ -223,27 +228,42 @@
         <img src="{{ url_for('static', filename='tiles/z7.gif') }}" alt="中">
       </button>
     </div>
-    
-    <!-- 隠しフィールド -->
+
+    <!-- 隠しフィールド (選択された牌一覧) -->
     <input type="hidden" name="selected_tiles" id="selected_tiles">
-    
+
     <!-- 選択順の表示エリア -->
     <div id="selection_display">選択順: (まだ何も選択していません)</div>
-    
+
     <br>
     <input type="submit" value="決定">
   </form>
-  
+
+  <!-- エラー表示 -->
   {% if error %}
     <div class="error">
       エラー: {{ error }}
     </div>
   {% endif %}
-  
-  {% if sorted_result %}
-    <!-- 待ちパターンの結果を画像付きで横並びで表示 -->
+
+  <!-- あなたが選択した牌を画像で表示 -->
+  {% if selected_tiles and not error %}
     <div>
-      <h2 style="text-align: center;">待ちになっている確率 (高い順):</h2>
+      <h2 style="text-align: center;">あなたが選択した牌</h2>
+      <div class="pattern-container">
+        {% for tile in selected_tiles %}
+          <div class="pattern-box">
+            <img src="{{ url_for('static', filename='tiles/' ~ tile ~ '.gif') }}" alt="{{ tile }}">
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+
+  <!-- 待ちになっている確率 (高い順) -->
+  {% if sorted_result %}
+    <div>
+      <h2 style="text-align: center;">待ちになっている確率 (高い順)</h2>
       <div class="pattern-container">
         {% for tile, probability in sorted_result %}
           <div class="pattern-box">
@@ -254,18 +274,35 @@
       </div>
     </div>
   {% endif %}
-  
+
   <script>
     // 選択された牌の順番を保持する配列
     let selectedTiles = [];
-    
+  
     // 選択順表示と隠しフィールド更新用の関数
     function updateSelectionDisplay() {
-      let display = selectedTiles.length ? selectedTiles.join(', ') : "(まだ何も選択していません)";
-      document.getElementById('selection_display').textContent = "選択順: " + display;
-      document.getElementById('selected_tiles').value = selectedTiles.join(',');
+      const displayElem = document.getElementById('selection_display');
+      const hiddenInput = document.getElementById('selected_tiles');
+  
+      if (selectedTiles.length === 0) {
+        // まだ牌を選んでいない場合
+        displayElem.textContent = "選択順: (まだ何も選択していません)";
+        hiddenInput.value = "";
+        return;
+      }
+  
+      // 牌が1枚以上選ばれている場合、HTMLで<img>タグを挿入
+      let html = "選択順: ";
+      selectedTiles.forEach(tile => {
+        // /static/tiles/ 以下に tile + ".gif" がある想定
+        html += `<img src="/static/tiles/${tile}.gif" alt="${tile}" style="width:40px; height:auto; margin-right:4px;">`;
+      });
+      displayElem.innerHTML = html;
+  
+      // 選択した牌の文字列を隠しフィールドにセット
+      hiddenInput.value = selectedTiles.join(',');
     }
-    
+  
     // 各牌ボタンにクリックイベントを追加
     document.querySelectorAll('.tile').forEach(button => {
       button.addEventListener('click', function() {
